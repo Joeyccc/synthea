@@ -5,17 +5,16 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.ArrayList;
+import java.util.Random;
 import java.util.function.Function;
-
 
 import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
-
-/**
- * Export configuration class for BFD
+/** Export configuration class for BFD.
  */
 public class BFDExportBuilder {
 
@@ -34,8 +33,11 @@ public class BFDExportBuilder {
     // SNF,
   }
   
+  private boolean testing = true;  // specifies if we are testing, which causes some configs to be consistent from run to run (e.g., distributions)
 
   private File configFile;
+  private Random rand = new Random();
+
   private List<BFDExportConfigEntry> allConfigs = null;
   
   private List<BFDExportConfigEntry> beneficiaryConfigs = new ArrayList<BFDExportConfigEntry>();
@@ -53,8 +55,83 @@ public class BFDExportBuilder {
   
   /** constructor */
   public BFDExportBuilder() {
-    this.configFile = new File( "src/main/resources/exporters/cms_field_values.tsv" );
+    this.configFile = new File( "src/main/resources/exporters/cms_field_values2.tsv" );
     this.initConfigs();
+  }
+
+  private boolean shouldAdd( String value ) {
+    boolean retval = false;
+    value = value.trim();
+    if ( !value.isEmpty() ) {
+      // values we can work with
+      if ( value.equalsIgnoreCase("NULL") || value.startsWith("Coded") ) {
+        retval = false;
+      }
+      // things that still needs to be taken care of, write warning
+      else if ( value.startsWith("Mapped from ")
+                || value.startsWith("fieldValues.put")
+                || value.startsWith("(")
+                || value.startsWith("logic exists ")
+                || value.startsWith("RxNorm to")
+                || value.startsWith("if (")
+                || value.startsWith("bb2DateFrom")
+      ) {
+        System.out.println("Config spreadsheet needs further work:"+value);
+        retval = false;
+      }
+      else {
+        retval = true;
+      }
+    }
+    else {
+      // System.out.println("rejecting because value="+value);
+      retval = false;
+    }
+    return retval;
+  }
+
+  private String evalConfig( String value ) {
+    // look for comments (matching anything in parenthesis)
+    //  currently we just ignore comments since they are for the analyst doing the config spreadsheet
+    // String comment = null;
+    String retval = value;
+    int commentStart = value.indexOf("(");
+    if ( commentStart >= 0 ) {
+      retval = value.substring(0, commentStart - 1);
+      // comment = value.substring(commentStart + 1, value.length()-1);
+    }
+
+    // replace [Blank] with empty string
+    if ( value.equalsIgnoreCase("[Blank]")) {
+      // System.out.println("blank inserted");
+      retval = "";
+    }
+
+    // distributions and functions are done at export phase
+    return retval;
+  }
+
+  /** choose a value in a distribution string; note that this is safe to always use 
+   *  since it will check to see if the the expression is a distribution string first
+   *  @param expression the string that potentially represents a distribution string
+   *  @param useFirst boolean to always use the first value in the distribution string;
+   *                  useful for testing
+  */
+  private String evalConfigDistribution( String expression, boolean useFirst ) {
+    // must be done after value has removed things like comments and functions
+    String retval = expression;
+    if ( expression.contains(",") ) {
+      List<String> values = Arrays.asList(retval.split(","));
+      if ( useFirst ) {
+        retval = values.get(0);
+      }
+      else {
+        // System.out.println("flat distribution:"+expression);
+        int index = this.rand.nextInt(values.size());
+        retval = values.get(index);
+      }
+    }
+    return retval;
   }
 
   /** initialize object from configuration file */
@@ -63,31 +140,34 @@ public class BFDExportBuilder {
       System.out.println("reading from " + this.configFile.getAbsolutePath() );
       Reader reader = new BufferedReader(new FileReader(this.configFile));
       CsvToBean<BFDExportConfigEntry> csvReader = new CsvToBeanBuilder<BFDExportConfigEntry>(reader)
-        .withType(BFDExportConfigEntry.class)
-        .withSeparator('\t')
-        .withIgnoreLeadingWhiteSpace(true)
-        .withIgnoreEmptyLine(true)
-        .build();
+            .withType(BFDExportConfigEntry.class)
+            .withSeparator('\t')
+            .withIgnoreLeadingWhiteSpace(true)
+            .withIgnoreEmptyLine(true)
+            .build();
       this.allConfigs = csvReader.parse();
+      for ( int i=0; i < 5; i++ ) {
+        System.out.println(" allConfigs." + i + ": " + this.allConfigs.get(i));
+      }
 
       // this.initConfigItems();
       for ( BFDExportConfigEntry prop: this.getAllConfigs() ) {
-        if ( !prop.getBeneficiary().isEmpty() ) {
+        if ( shouldAdd(prop.getBeneficiary()) ) {
           this.beneficiaryConfigs.add(prop);
         }
-        if ( !prop.getBeneficiary_history().isEmpty() ) {
+        if ( shouldAdd(prop.getBeneficiary_history()) ) {
           this.beneficiaryHistoryConfigs.add(prop);
         }
-        if ( !prop.getCarrier().isEmpty() ) {
+        if ( shouldAdd(prop.getCarrier()) ) {
           this.carrierConfigs.add(prop);
         }
-        if ( !prop.getInpatient().isEmpty() ) {
+        if ( shouldAdd(prop.getInpatient()) ) {
           this.inpatientConfigs.add(prop);
         }
-        if ( !prop.getOutpatient().isEmpty() ) {
+        if ( shouldAdd(prop.getOutpatient()) ) {
           this.outpatientConfigs.add(prop);
         }
-        if ( !prop.getPrescription().isEmpty() ) {
+        if ( shouldAdd(prop.getPrescription()) ) {
           this.prescriptionConfigs.add(prop);
         }
       } 
@@ -99,35 +179,29 @@ public class BFDExportBuilder {
     }
   }
 
-  /** Sets the known field values based on exporter config TSV file
-     * @param type output type (one of the ExportConfigType types)
-     * @param fieldValues reference to a HashMap of field values in each of the exportXXXXX() functions
-     * @param getCellValueFunc reference to Function that retrieves the string value relevant to the current output type from the config file
-     * @param getFieldEnumFunc reference to Function that retrieves the enum relevant to the current output type
-     * @return the updated field values
-     */
-  public HashMap setFromConfig( ExportConfigType type, HashMap fieldValues, Function<BFDExportConfigEntry, String> getCellValueFunc, Function<String, Enum> getFieldEnumFunc ) {
+  /** Sets the known field values based on exporter config TSV file.
+   * @param type output type (one of the ExportConfigType types)
+   * @param fieldValues reference to a HashMap of field values in each of the exportXXXXX() functions
+   * @param getCellValueFunc reference to Function that retrieves the string value relevant to the current output type from the config file
+   * @param getFieldEnumFunc reference to Function that retrieves the enum relevant to the current output type
+   * @return the updated field values
+   */
+  public HashMap setFromConfig(ExportConfigType type, 
+                                HashMap fieldValues, 
+                                Function<BFDExportConfigEntry, String> getCellValueFunc, 
+                                Function<String, Enum> getFieldEnumFunc) {
     fieldValues.clear();
     List<BFDExportConfigEntry> configs = this.getConfigItemsByType(type);
     try {
-      // System.out.println("^^^^^"+type+"^^^^^"+configs.get(0));
       int propCount = 0;
       for ( BFDExportConfigEntry prop: configs ) {
         String cell = getCellValueFunc.apply( prop );
         // System.out.println("*****"+cell);
         if ( !cell.isEmpty() ) {
           propCount++;
-          String value = cell;
-          String comment = null;
-          int commentStart = cell.indexOf("(");
-          if ( commentStart >= 0 ) {
-            value = cell.substring(0, commentStart - 1);
-            comment = cell.substring(commentStart + 1, cell.length()-1);
-          }
+          String value = evalConfig(cell);
+          value = evalConfigDistribution( value, this.testing );
           Enum fieldEnum = getFieldEnumFunc.apply(prop.getField());
-          // System.out.println("     field enum"+fieldEnum);
-          // System.out.println("     value: " + value);
-          // System.out.println("     comment: " + comment);
           fieldValues.put(fieldEnum, value);
         }
       }
@@ -139,13 +213,13 @@ public class BFDExportBuilder {
     return fieldValues;
   }
 
-  /** returns all the config items */
+  /** returns all the config items. */
   public List<BFDExportConfigEntry> getAllConfigs() {
     return this.allConfigs;
   }
 
 
-  /** returns all inpatient config items */
+  /** returns all inpatient config items. */
   public List<BFDExportConfigEntry> getConfigItemsByType(ExportConfigType type) {
     switch( type ) {
       case BENEFICIARY:

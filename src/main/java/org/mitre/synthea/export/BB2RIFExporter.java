@@ -16,13 +16,13 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.function.Function;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.mitre.synthea.export.BFDExportBuilder.ExportConfigType;
 import org.mitre.synthea.helpers.SimpleCSV;
@@ -181,8 +181,8 @@ public class BB2RIFExporter implements Flushable {
     exportBeneficiary(person, stopTime, useConfig);
     exportBeneficiaryHistory(person, stopTime, useConfig);
     exportInpatient(person, stopTime, useConfig);
-    exportOutpatient(person, stopTime, useConfig );
-    exportCarrier(person, stopTime, useConfig );
+    exportOutpatient(person, stopTime, useConfig);
+    exportCarrier(person, stopTime, useConfig);
     exportPrescription(person, stopTime, useConfig);
   }
   
@@ -190,7 +190,7 @@ public class BB2RIFExporter implements Flushable {
    * Export a beneficiary details for single person.
    * @param person the person to export
    * @param stopTime end time of simulation
-   * @param useConfig flag to use BFDExportBuilder; use false to use original code, true to use BFDExportBuilder and ExportBuilder
+   * @param useConfig flag to use BFDExportBuilder; use false to use original code, true to use BFDExportBuilder
    * @throws IOException if something goes wrong
    */
   private void exportBeneficiary(Person person, long stopTime, boolean useConfig) throws IOException {
