@@ -199,7 +199,12 @@ public class BB2RIFExporter implements Flushable {
     if ( useConfig ) {        
       Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getBeneficiary(); // gets output specific cell from configs
       Function<String, Enum> getFieldEnumFunc = field -> BeneficiaryFields.valueOf(field);  // gets output specific enums
-      this.outputBuilder.setFromConfig(ExportConfigType.BENEFICIARY, fieldValues, getCellValueFunc, getFieldEnumFunc);
+      this.outputBuilder.setFromConfig(ExportConfigType.BENEFICIARY, 
+        fieldValues, 
+        getCellValueFunc, 
+        getFieldEnumFunc, 
+        null // encounter 
+      );
     }
     else {
       fieldValues.clear();
@@ -278,7 +283,12 @@ public class BB2RIFExporter implements Flushable {
     if ( useConfig ) {        
       Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getBeneficiary_history(); // gets output specific cell from configs
       Function<String, Enum> getFieldEnumFunc = field -> BeneficiaryHistoryFields.valueOf(field);  // gets output specific enums
-      this.outputBuilder.setFromConfig(ExportConfigType.BENEFICIARY_HISTORY, fieldValues, getCellValueFunc, getFieldEnumFunc);
+      this.outputBuilder.setFromConfig(ExportConfigType.BENEFICIARY_HISTORY, 
+        fieldValues, 
+        getCellValueFunc, 
+        getFieldEnumFunc, 
+        null //encounter
+      );
     }
     else {
       fieldValues.clear();
@@ -364,7 +374,7 @@ public class BB2RIFExporter implements Flushable {
       if ( useConfig ) {        
         Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getOutpatient(); // gets output specific cell from configs
         Function<String, Enum> getFieldEnumFunc = field -> OutpatientFields.valueOf(field);  // gets output specific enums
-        this.outputBuilder.setFromConfig(ExportConfigType.OUTPATIENT, fieldValues, getCellValueFunc, getFieldEnumFunc);
+        this.outputBuilder.setFromConfig(ExportConfigType.OUTPATIENT, fieldValues, getCellValueFunc, getFieldEnumFunc, encounter);
       }
       else {
         fieldValues.clear();
@@ -470,7 +480,11 @@ public class BB2RIFExporter implements Flushable {
       if ( useConfig ) {        
         Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getInpatient(); // gets output specific cell from configs
         Function<String, Enum> getFieldEnumFunc = field -> InpatientFields.valueOf(field);  // gets output specific enums
-        this.outputBuilder.setFromConfig(ExportConfigType.INPATIENT, fieldValues, getCellValueFunc, getFieldEnumFunc);
+        this.outputBuilder.setFromConfig(ExportConfigType.INPATIENT, 
+          fieldValues, 
+          getCellValueFunc, 
+          getFieldEnumFunc,
+          encounter );
       }
       else {
         fieldValues.clear();
@@ -505,6 +519,9 @@ public class BB2RIFExporter implements Flushable {
         fieldValues.put(InpatientFields.IME_OP_CLM_VAL_AMT, "0");
         fieldValues.put(InpatientFields.DSH_OP_CLM_VAL_AMT, "0");
         fieldValues.put(InpatientFields.REV_CNTR_NDC_QTY, "0");
+
+        fieldValues.put(InpatientFields.CLM_FROM_DT, bb2DateFromTimestamp(encounter.start));
+        fieldValues.put(InpatientFields.CLM_THRU_DT, bb2DateFromTimestamp(encounter.stop));  
     }
       
       // The REQUIRED fields
@@ -512,8 +529,6 @@ public class BB2RIFExporter implements Flushable {
       fieldValues.put(InpatientFields.BENE_ID, (String) person.attributes.get(BB2_BENE_ID));
       fieldValues.put(InpatientFields.CLM_ID, "" + claimId);
       fieldValues.put(InpatientFields.CLM_GRP_ID, "" + claimGroupId);
-      fieldValues.put(InpatientFields.CLM_FROM_DT, bb2DateFromTimestamp(encounter.start));
-      fieldValues.put(InpatientFields.CLM_THRU_DT, bb2DateFromTimestamp(encounter.stop));
       fieldValues.put(InpatientFields.NCH_WKLY_PROC_DT,
           bb2DateFromTimestamp(nextFriday(encounter.stop)));
       fieldValues.put(InpatientFields.PRVDR_NUM, encounter.provider.id);
@@ -677,7 +692,7 @@ public class BB2RIFExporter implements Flushable {
       if ( useConfig ) {
         Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getCarrier(); // gets output specific cell from configs
         Function<String, Enum> getFieldEnumFunc = field -> CarrierFields.valueOf(field);  // gets output specific enums
-        this.outputBuilder.setFromConfig(ExportConfigType.CARRIER, fieldValues, getCellValueFunc, getFieldEnumFunc);
+        this.outputBuilder.setFromConfig(ExportConfigType.CARRIER, fieldValues, getCellValueFunc, getFieldEnumFunc, encounter );
       }
       else {
         fieldValues.clear();
@@ -777,7 +792,7 @@ public class BB2RIFExporter implements Flushable {
         if ( useConfig ) {        
           Function<BFDExportConfigEntry, String> getCellValueFunc = prop -> prop.getPrescription(); // gets output specific cell from configs
           Function<String, Enum> getFieldEnumFunc = field -> PrescriptionFields.valueOf(field);  // gets output specific enums
-          this.outputBuilder.setFromConfig(ExportConfigType.PRESCRIPTION, fieldValues, getCellValueFunc, getFieldEnumFunc);
+          this.outputBuilder.setFromConfig(ExportConfigType.PRESCRIPTION, fieldValues, getCellValueFunc, getFieldEnumFunc, encounter);
         }
         else {
           fieldValues.clear();

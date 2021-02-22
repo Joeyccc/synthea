@@ -14,6 +14,9 @@ public class BFDExportConfigEntry {
   private String outpatient;
   private String carrier;
   private String prescription;
+  private int line; // the line that the config appears in in the TSV file
+
+  static int sNextLineNum = 1;  // starts from offset due headers, etc.
 
   /** trims any newlines, tabs, spaces from value 
    *  @param value the string to evaluate for newlines, tabs, etc.
@@ -22,11 +25,16 @@ public class BFDExportConfigEntry {
     return value.trim();
   }
 
+  public int getLineNumber() {
+    return this.line;
+  }
+
   public String getField() {
     return this.field;
   }
 
   public void setField(String field) {
+    this.line = ++sNextLineNum;
     this.field = trimAllWhitespace(field);
   }
 

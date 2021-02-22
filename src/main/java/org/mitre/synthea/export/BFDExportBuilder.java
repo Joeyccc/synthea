@@ -5,8 +5,10 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
+import java.text.SimpleDateFormat;
 import java.util.Arrays;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Random;
@@ -14,6 +16,16 @@ import java.util.function.Function;
 
 import com.opencsv.bean.CsvToBean;
 import com.opencsv.bean.CsvToBeanBuilder;
+
+import org.mitre.synthea.world.agents.Payer;
+import org.mitre.synthea.world.agents.Person;
+import org.mitre.synthea.world.agents.Provider.ProviderType;
+import org.mitre.synthea.world.concepts.HealthRecord;
+import org.mitre.synthea.world.concepts.HealthRecord.EncounterType;
+import org.mitre.synthea.world.concepts.HealthRecord.Medication;
+
+
+
 /** Export configuration class for BFD.
  */
 public class BFDExportBuilder {
@@ -31,6 +43,21 @@ public class BFDExportBuilder {
     // PDE,
     PRESCRIPTION,
     // SNF,
+  }
+  
+  /**
+   * Day-Month-Year date format.
+   */
+  private static final SimpleDateFormat BB2_DATE_FORMAT = new SimpleDateFormat("dd-MMM-yyyy");
+
+  /**
+   * Get a date string in the format DD-MMM-YY from the given time stamp.
+   */
+  private static String bb2DateFromTimestamp(long time) {
+    synchronized (BB2_DATE_FORMAT) {
+      // http://bugs.java.com/bugdatabase/view_bug.do?bug_id=6231579
+      return BB2_DATE_FORMAT.format(new Date(time));
+    }
   }
   
   private boolean testing = true;  // specifies if we are testing, which causes some configs to be consistent from run to run (e.g., distributions)
@@ -59,55 +86,91 @@ public class BFDExportBuilder {
     this.initConfigs();
   }
 
-  private boolean shouldAdd( String value ) {
+  /** determines if an expression in the TSV file should be added or ignored
+   *  @param expression the expression to evaluate
+   *  @return true iff this expression is can be evaluated, expanded and is useful
+   */
+  private boolean shouldAdd( String expression, BFDExportConfigEntry entry, ExportConfigType type ) {
     boolean retval = false;
-    value = value.trim();
-    if ( !value.isEmpty() ) {
+    expression = expression.trim();
+    if ( !expression.isEmpty() ) {
       // values we can work with
-      if ( value.equalsIgnoreCase("NULL") || value.startsWith("Coded") ) {
+      if ( expression.equalsIgnoreCase("NULL") || expression.equalsIgnoreCase("Coded") ) {
         retval = false;
       }
       // things that still needs to be taken care of, write warning
-      else if ( value.startsWith("Mapped from ")
-                || value.startsWith("fieldValues.put")
-                || value.startsWith("(")
-                || value.startsWith("logic exists ")
-                || value.startsWith("RxNorm to")
-                || value.startsWith("if (")
-                || value.startsWith("bb2DateFrom")
+      else if ( expression.startsWith("(") // comment only comment
+                // || expression.startsWith("[:") // either [:...] or function call
       ) {
-        System.out.println("Config spreadsheet needs further work:"+value);
+        System.out.printf("  config spreadsheet needs further work (line %3d | %-19s : %s : %s\n",
+          entry.getLineNumber(), type, entry.getField(), expression);
         retval = false;
+      }
+      else if ( expression.startsWith("[")) { // potentially a function or developer note
+        // switch ( expression ) {
+        //   case "[Blank]":
+        //   case "[bb2DateFromEncounterStartTimestamp]":
+        //     retval = true;
+        //     break;
+        //   default:  // does not know called function, need to implement
+        //     System.out.printf("  config spreadsheet needs further work (line %3d | %-19s)  %s:%s\n",
+        //       entry.getLineNumber(), type, entry.getField(), expression);
+        //     retval = false;
+        //     break;
+        // }
+        retval = true;
       }
       else {
         retval = true;
       }
     }
     else {
-      // System.out.println("rejecting because value="+value);
+      // System.out.println("rejecting because expression="+expression);
       retval = false;
     }
     return retval;
   }
 
-  private String evalConfig( String value ) {
+  private String evalConfig( String expression, BFDExportConfigEntry entry, ExportConfigType type, HealthRecord.Encounter encounter ) {
     // look for comments (matching anything in parenthesis)
     //  currently we just ignore comments since they are for the analyst doing the config spreadsheet
     // String comment = null;
-    String retval = value;
-    int commentStart = value.indexOf("(");
+    String retval = expression;
+    int commentStart = expression.indexOf("(");
     if ( commentStart >= 0 ) {
-      retval = value.substring(0, commentStart - 1);
-      // comment = value.substring(commentStart + 1, value.length()-1);
+      retval = expression.substring(0, commentStart - 1);
+      // comment = expression.substring(commentStart + 1, expression.length()-1);
     }
+    boolean printError = false;
 
-    // replace [Blank] with empty string
-    if ( value.equalsIgnoreCase("[Blank]")) {
-      // System.out.println("blank inserted");
+    // evaluate for functions
+    if ( expression.startsWith("[")) {
+      switch ( expression ) {
+        case "[Blank]":
+          // System.out.println("blank inserted");
+          retval = "";
+          break;
+        case "[bb2Date_EncounterStartTimestamp]":
+          retval = bb2DateFromTimestamp(encounter.start);
+          break;
+        case "[bb2Date_EncounterStopTimestamp]":
+          retval = bb2DateFromTimestamp(encounter.stop);
+          break;
+        default:  // does not know called function, need to implement
+          printError = true;
+          retval = "";
+          break;
+      }
+    }
+    else if ( expression.startsWith("fieldValues.put") ) {  // same as [:...]
+      printError = true;
       retval = "";
     }
 
-    // distributions and functions are done at export phase
+    if ( printError ) {
+      System.out.printf("  output configuration error: exporter does not know how to evaluate function on line %3d for %-19s:  %s:%s\n",
+        entry.getLineNumber(), type, entry.getField(), expression);
+    }
     return retval;
   }
 
@@ -118,7 +181,7 @@ public class BFDExportBuilder {
    *                  useful for testing
   */
   private String evalConfigDistribution( String expression, boolean useFirst ) {
-    // must be done after value has removed things like comments and functions
+    // must be done after expression has removed things like comments and functions
     String retval = expression;
     if ( expression.contains(",") ) {
       List<String> values = Arrays.asList(retval.split(","));
@@ -137,7 +200,7 @@ public class BFDExportBuilder {
   /** initialize object from configuration file */
   private List<BFDExportConfigEntry> initConfigs() {
     try {
-      System.out.println("reading from " + this.configFile.getAbsolutePath() );
+      System.out.println("Reading from " + this.configFile.getAbsolutePath() );
       Reader reader = new BufferedReader(new FileReader(this.configFile));
       CsvToBean<BFDExportConfigEntry> csvReader = new CsvToBeanBuilder<BFDExportConfigEntry>(reader)
             .withType(BFDExportConfigEntry.class)
@@ -146,28 +209,28 @@ public class BFDExportBuilder {
             .withIgnoreEmptyLine(true)
             .build();
       this.allConfigs = csvReader.parse();
-      for ( int i=0; i < 5; i++ ) {
-        System.out.println(" allConfigs." + i + ": " + this.allConfigs.get(i));
-      }
+      // for ( int i=0; i < 5; i++ ) {
+      //   System.out.println(" allConfigs." + i + ": " + this.allConfigs.get(i));
+      // }
 
       // this.initConfigItems();
       for ( BFDExportConfigEntry prop: this.getAllConfigs() ) {
-        if ( shouldAdd(prop.getBeneficiary()) ) {
+        if ( shouldAdd(prop.getBeneficiary(), prop, ExportConfigType.BENEFICIARY) ) {
           this.beneficiaryConfigs.add(prop);
         }
-        if ( shouldAdd(prop.getBeneficiary_history()) ) {
+        if ( shouldAdd(prop.getBeneficiary_history(), prop, ExportConfigType.BENEFICIARY_HISTORY) ) {
           this.beneficiaryHistoryConfigs.add(prop);
         }
-        if ( shouldAdd(prop.getCarrier()) ) {
+        if ( shouldAdd(prop.getCarrier(), prop, ExportConfigType.CARRIER) ) {
           this.carrierConfigs.add(prop);
         }
-        if ( shouldAdd(prop.getInpatient()) ) {
+        if ( shouldAdd(prop.getInpatient(), prop, ExportConfigType.INPATIENT) ) {
           this.inpatientConfigs.add(prop);
         }
-        if ( shouldAdd(prop.getOutpatient()) ) {
+        if ( shouldAdd(prop.getOutpatient(), prop, ExportConfigType.OUTPATIENT) ) {
           this.outpatientConfigs.add(prop);
         }
-        if ( shouldAdd(prop.getPrescription()) ) {
+        if ( shouldAdd(prop.getPrescription(), prop, ExportConfigType.PRESCRIPTION) ) {
           this.prescriptionConfigs.add(prop);
         }
       } 
@@ -182,14 +245,15 @@ public class BFDExportBuilder {
   /** Sets the known field values based on exporter config TSV file.
    * @param type output type (one of the ExportConfigType types)
    * @param fieldValues reference to a HashMap of field values in each of the exportXXXXX() functions
-   * @param getCellValueFunc reference to Function that retrieves the string value relevant to the current output type from the config file
+   * @param getCellValueFunc reference to Function that retrieves the string expression relevant to the current output type from the config file
    * @param getFieldEnumFunc reference to Function that retrieves the enum relevant to the current output type
    * @return the updated field values
    */
   public HashMap setFromConfig(ExportConfigType type, 
                                 HashMap fieldValues, 
                                 Function<BFDExportConfigEntry, String> getCellValueFunc, 
-                                Function<String, Enum> getFieldEnumFunc) {
+                                Function<String, Enum> getFieldEnumFunc,
+                                HealthRecord.Encounter encounter) {
     fieldValues.clear();
     List<BFDExportConfigEntry> configs = this.getConfigItemsByType(type);
     try {
@@ -199,7 +263,7 @@ public class BFDExportBuilder {
         // System.out.println("*****"+cell);
         if ( !cell.isEmpty() ) {
           propCount++;
-          String value = evalConfig(cell);
+          String value = evalConfig(cell, prop, type, encounter);
           value = evalConfigDistribution( value, this.testing );
           Enum fieldEnum = getFieldEnumFunc.apply(prop.getField());
           fieldValues.put(fieldEnum, value);
